@@ -1,8 +1,11 @@
 // Control Props
 // http://localhost:3000/isolated/exercise/06.js
 
+import {reduce} from 'lodash'
 import * as React from 'react'
+import {act} from 'react-dom/test-utils'
 import {Switch} from '../switch'
+import warning from 'warning'
 
 const callAll = (...fns) => (...args) => fns.forEach(fn => fn?.(...args))
 
@@ -28,46 +31,25 @@ function toggleReducer(state, {type, initialState}) {
 function useToggle({
   initialOn = false,
   reducer = toggleReducer,
-  // 🐨 add an `onChange` prop.
-  // 🐨 add an `on` option here
-  // 💰 you can alias it to `controlledOn` to avoid "variable shadowing."
+  onChange,
+  on: controlledOn,
 } = {}) {
   const {current: initialState} = React.useRef({on: initialOn})
   const [state, dispatch] = React.useReducer(reducer, initialState)
-  // 🐨 determine whether on is controlled and assign that to `onIsControlled`
-  // 💰 `controlledOn != null`
 
-  // 🐨 Replace the next line with assigning `on` to `controlledOn` if
-  // `onIsControlled`, otherwise, it should be `state.on`.
-  const {on} = state
+  const onIsControlled = controlledOn != null
+  const on = onIsControlled ? controlledOn : state.on
 
-  // We want to call `onChange` any time we need to make a state change, but we
-  // only want to call `dispatch` if `!onIsControlled` (otherwise we could get
-  // unnecessary renders).
-  // 🐨 To simplify things a bit, let's make a `dispatchWithOnChange` function
-  // right here. This will:
-  // 1. accept an action
-  // 2. if onIsControlled is false, call dispatch with that action
-  // 3. Then call `onChange` with our "suggested changes" and the action.
+  const dispatchWithOnChange = action => {
+    if (!onIsControlled) {
+      dispatch(action)
+    }
+    onChange?.(reducer({...state, on}, action), action)
+  }
 
-  // 🦉 "Suggested changes" refers to: the changes we would make if we were
-  // managing the state ourselves. This is similar to how a controlled <input />
-  // `onChange` callback works. When your handler is called, you get an event
-  // which has information about the value input that _would_ be set to if that
-  // state were managed internally.
-  // So how do we determine our suggested changes? What code do we have to
-  // calculate the changes based on the `action` we have here? That's right!
-  // The reducer! So if we pass it the current state and the action, then it
-  // should return these "suggested changes!"
-  //
-  // 💰 Sorry if Olivia the Owl is cryptic. Here's what you need to do for that onChange call:
-  // `onChange(reducer({...state, on}, action), action)`
-  // 💰 Also note that user's don't *have* to pass an `onChange` prop (it's not required)
-  // so keep that in mind when you call it! How could you avoid calling it if it's not passed?
-
-  // make these call `dispatchWithOnChange` instead
-  const toggle = () => dispatch({type: actionTypes.toggle})
-  const reset = () => dispatch({type: actionTypes.reset, initialState})
+  const toggle = () => dispatchWithOnChange({type: actionTypes.toggle})
+  const reset = () =>
+    dispatchWithOnChange({type: actionTypes.reset, initialState})
 
   function getTogglerProps({onClick, ...props} = {}) {
     return {
@@ -93,9 +75,53 @@ function useToggle({
   }
 }
 
-function Toggle({on: controlledOn, onChange}) {
+function useControlledInputWarning(value, onChange, readOnly) {
+  const onRef = React.useRef(value)
+
+  React.useEffect(() => {
+    if (value != null && !onChange && !readOnly) {
+      warning(
+        false,
+        `Warning: Failed prop type: You provided a \`value\`
+      prop to a form field without an \`onChange\` handler. This will
+      render a read-only field. If the field should be mutable use
+      \`defaultValue\`. Otherwise, set either \`onChange\` or \`readOnly\`.`,
+      )
+    }
+
+    if (onRef.current != null && value == null) {
+      warning(
+        false,
+        `Warning: A component is changing a controlled input of type undefined
+        to be uncontrolled. Input elements should not switch from controlled to
+        uncontrolled (or vice versa). Decide between using a controlled or
+        uncontrolled input element for the lifetime of the component.
+        More info: https://fb.me/react-controlled-components`,
+      )
+    }
+
+    if (onRef.current == null && value != null) {
+      warning(
+        false,
+        `Warning: A component is changing an uncontrolled input of type
+          undefined to be controlled. Input elements should not switch from
+          uncontrolled to controlled (or vice versa). Decide between using
+          a controlled or uncontrolled input element for the lifetime of
+          the component. More info: https://fb.me/react-controlled-components`,
+      )
+    }
+  }, [value, onChange, readOnly])
+}
+
+function Toggle({on: controlledOn, onChange, readOnly = false}) {
   const {on, getTogglerProps} = useToggle({on: controlledOn, onChange})
   const props = getTogglerProps({on})
+
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useControlledInputWarning(controlledOn, onChange, readOnly)
+  }
+
   return <Switch {...props} />
 }
 
@@ -135,9 +161,9 @@ function App() {
       <div>
         <div>Uncontrolled Toggle:</div>
         <Toggle
-          onChange={(...args) =>
+          onChange={(...args) => {
             console.info('Uncontrolled Toggle onChange', ...args)
-          }
+          }}
         />
       </div>
     </div>
